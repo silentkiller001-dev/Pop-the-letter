@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Letter Pop: Survivor Edition</title>
+    <style>
+        body { margin: 0; font-family: 'Arial Rounded MT Bold', sans-serif; background: #eef2f3; overflow: hidden; display: flex; flex-direction: column; align-items: center; }
+        
+        #ui-layer { 
+            display: flex; justify-content: space-around; width: 100%; max-width: 800px; 
+            margin-top: 15px; z-index: 10; font-size: 18px; font-weight: bold; color: #444;
+        }
+
+        #target-container { margin-top: 10px; text-align: center; z-index: 10; }
+        #target-letter { 
+            font-size: 70px; color: #2c3e50; background: white; padding: 5px 35px; 
+            border-radius: 20px; box-shadow: 0 6px 0 #bdc3c7; border: 4px solid #34495e; 
+        }
+
+        .stat-box { background: rgba(255,255,255,0.9); padding: 8px 15px; border-radius: 12px; border: 2px solid #34495e; min-width: 100px; text-align: center; }
+        #lives-val { color: #e74c3c; font-size: 22px; }
+
+        .balloon {
+            position: absolute; width: 85px; height: 105px; border-radius: 50% 50% 50% 50% / 40% 40% 60% 60%;
+            display: flex; align-items: center; justify-content: center; font-size: 40px; font-weight: bold;
+            color: white; cursor: pointer; text-shadow: 1px 1px 2px rgba(0,0,0,0.2);
+            animation: floatUp var(--speed) linear forwards;
+        }
+        .balloon::after { content: ''; position: absolute; bottom: -15px; width: 2px; height: 35px; background: rgba(0,0,0,0.1); }
+
+        @keyframes floatUp {
+            from { transform: translateY(110vh); }
+            to { transform: translateY(-30vh); }
+        }
+
+        .confetti {
+            position: absolute; font-weight: bold; pointer-events: none;
+            animation: slowScatter var(--duration) ease-out forwards;
+        }
+
+        @keyframes slowScatter {
+            0% { transform: translate(0, 0) rotate(0deg); opacity: 1; }
+            100% { transform: translate(var(--x), var(--y)) rotate(720deg); opacity: 0; }
+        }
+
+        /* Game Over Overlay */
+        #game-over {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.85); display: none; flex-direction: column;
+            align-items: center; justify-content: center; color: white; z-index: 100;
+        }
+        #game-over h1 { font-size: 60px; color: #ff595e; margin: 10px; }
+        #game-over button { 
+            padding: 15px 40px; font-size: 24px; cursor: pointer; border-radius: 50px; 
+            border: none; background: #8ac926; color: white; font-weight: bold; margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+
+<div id="ui-layer">
+    <div class="stat-box">SCORE: <span id="score-val">0</span></div>
+    <div class="stat-box">LIVES: <span id="lives-val">🎈🎈🎈🎈🎈</span></div>
+    <div class="stat-box" id="level-box">LEVEL: <span id="level-val">1</span></div>
+</div>
+
+<div id="target-container">
+    <div id="target-letter">?</div>
+</div>
+
+<div id="game-board"></div>
+
+<div id="game-over">
+    <h1>GAME OVER!</h1>
+    <p id="final-score" style="font-size: 24px;"></p>
+    <button onclick="resetGame()">PLAY AGAIN</button>
+</div>
+
+<script>
+    const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    const colors = ["#FF595E", "#FFCA3A", "#8AC926", "#1982C4", "#6A4C93", "#FF924C"];
+    const board = document.getElementById('game-board');
+    const targetDisplay = document.getElementById('target-letter');
+    const scoreDisplay = document.getElementById('score-val');
+    const levelDisplay = document.getElementById('level-val');
+    const livesDisplay = document.getElementById('lives-val');
+    const gameOverScreen = document.getElementById('game-over');
+    
+    let score = 0;
+    let level = 1;
+    let lives = 5;
+    let currentTarget = "";
+    let isGameOver = false;
+
+    function initRound() {
+        if(isGameOver) return;
+        board.innerHTML = "";
+        currentTarget = alphabet[Math.floor(Math.random() * alphabet.length)];
+        targetDisplay.innerText = currentTarget;
+
+        let letters = [currentTarget];
+        while(letters.length < 6) {
+            let rand = alphabet[Math.floor(Math.random() * alphabet.length)];
+            if(!letters.includes(rand)) letters.push(rand);
+        }
+        letters.sort(() => Math.random() - 0.5);
+
+        letters.forEach((char, index) => {
+            createBalloon(char, index);
+        });
+    }
+
+    function createBalloon(char, index) {
+        const balloon = document.createElement('div');
+        balloon.className = 'balloon';
+        balloon.innerText = char;
+        balloon.style.backgroundColor = colors[Math.floor(Math.random() * colors.length)];
+        
+        const laneWidth = 100 / 6;
+        balloon.style.left = (laneWidth * index + 5) + "vw";
+        
+        // SPEED: Faster as level increases
+        const speed = Math.max(1.8, 8 - (level * 0.7)) + (Math.random() * 1.5); 
+        balloon.style.setProperty('--speed', speed + 's');
+        balloon.style.animationDelay = (Math.random() * 1.5) + "s";
+
+        // Detect if the TARGET letter escaped
+        balloon.addEventListener('animationend', () => {
+            if (char === currentTarget && !isGameOver) {
+                loseLife();
+            }
+            balloon.remove();
+        });
+
+        balloon.onclick = (e) => {
+            if(isGameOver) return;
+            if(char === currentTarget) {
+                updateScore();
+                spawnConfetti(e.clientX, e.clientY, balloon.style.backgroundColor, char);
+                balloon.remove();
+                setTimeout(initRound, 1200); 
+            } else {
+                balloon.style.transform = "scale(0.8)";
+                setTimeout(() => balloon.style.transform = "scale(1)", 150);
+            }
+        };
+        board.appendChild(balloon);
+    }
+
+    function loseLife() {
+        lives--;
+        livesDisplay.innerText = "🎈".repeat(lives);
+        if (lives <= 0) {
+            endGame();
+        } else {
+            // Re-spawn if target was missed so player doesn't get stuck
+            initRound();
+        }
+    }
+
+    function updateScore() {
+        score += 10;
+        scoreDisplay.innerText = score;
+        if (score % 30 === 0) {
+            level++;
+            levelDisplay.innerText = level;
+        }
+    }
+
+    function endGame() {
+        isGameOver = true;
+        board.innerHTML = "";
+        document.getElementById('final-score').innerText = "YOUR SCORE: " + score;
+        gameOverScreen.style.display = 'flex';
+    }
+
+    function resetGame() {
+        score = 0;
+        level = 1;
+        lives = 5;
+        isGameOver = false;
+        scoreDisplay.innerText = "0";
+        levelDisplay.innerText = "1";
+        livesDisplay.innerText = "🎈🎈🎈🎈🎈";
+        gameOverScreen.style.display = 'none';
+        initRound();
+    }
+
+    function spawnConfetti(x, y, color, char) {
+        for(let i = 0; i < 25; i++) {
+            const c = document.createElement('div');
+            c.className = 'confetti';
+            c.innerText = char;
+            c.style.color = color;
+            c.style.left = x + 'px';
+            c.style.top = y + 'px';
+            c.style.fontSize = Math.random() * 25 + 10 + 'px';
+            
+            const moveX = (Math.random() - 0.5) * 650; 
+            const moveY = (Math.random() - 0.5) * 650; 
+            c.style.setProperty('--x', moveX + 'px');
+            c.style.setProperty('--y', moveY + 'px');
+            
+            const duration = 2.5 + Math.random() * 1.5;
+            c.style.setProperty('--duration', duration + 's');
+            
+            document.body.appendChild(c);
+            setTimeout(() => c.remove(), duration * 1000);
+        }
+    }
+
+    initRound();
+</script>
+</body>
+</html>
